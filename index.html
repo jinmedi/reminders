@@ -129,10 +129,6 @@ svg{display:block;flex:none}
 .tmr{flex:none;width:40px;height:22px;border-radius:11px;background:var(--fill);color:var(--blue);font-size:12px;font-weight:600;display:grid;place-items:center;transition:background-color .12s,color .12s}
 .tmr:hover{background:var(--blue);color:#fff}
 .tmr.off{visibility:hidden}
-.mv{flex:none;width:26px;height:22px;border-radius:11px;background:var(--fill);color:var(--text2);display:grid;place-items:center;transition:background-color .12s,color .12s}
-.mv:hover{background:var(--text2);color:var(--surface)}
-.mv.off{opacity:.28;cursor:default}
-.mv.off:hover{background:var(--fill);color:var(--text2)}
 .item{position:relative}
 .grip{position:absolute;left:-22px;top:11px;width:20px;height:22px;display:grid;place-items:center;color:var(--text3);cursor:grab;opacity:0;transition:opacity .12s;touch-action:none;border-radius:6px}
 .item:hover .grip,.item:focus-within .grip{opacity:1}
@@ -221,7 +217,6 @@ textarea.big{min-height:72px;color:var(--text)}
   .main{padding:0 18px}
   .cell{gap:5px}
   .tmr{width:34px;font-size:11px}
-  .mv{width:24px}
   .mhead{margin:0 -18px;padding:0 18px}
   .ttl h1,.ttl .ct{font-size:30px}
   .side-foot{background:var(--bg)}
@@ -453,7 +448,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.10.01-drag';
+const APP_VERSION = '2026.10.01-plus7';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -601,15 +596,12 @@ function itemHTML(it, showList, nav) {
     + (meta ? `<div class="meta">${meta}</div>` : '')
     + `</div>`
     + (it.completed ? '' :
-        `<button class="tmr" data-act="minus1" aria-label="하루 앞으로 당기기">-1일</button>`
+        `<button class="tmr" data-act="minus1" aria-label="하루 앞으로 당기기">-1</button>`
         + (it.due === today()
           ? `<span class="tmr off" aria-hidden="true">오늘</span>`
           : `<button class="tmr" data-act="today" aria-label="오늘로 옮기기">오늘</button>`)
-        + `<button class="tmr" data-act="plus1" aria-label="하루 뒤로 미루기">+1일</button>`)
-    + (nav
-        ? (nav.up ? `<button class="mv" data-act="move" data-swap="${esc(nav.up)}" aria-label="위로 이동">${G.up}</button>` : `<span class="mv off" title="같은 날짜 안에서만 이동할 수 있습니다" aria-hidden="true">${G.up}</span>`)
-          + (nav.down ? `<button class="mv" data-act="move" data-swap="${esc(nav.down)}" aria-label="아래로 이동">${G.down}</button>` : `<span class="mv off" title="같은 날짜 안에서만 이동할 수 있습니다" aria-hidden="true">${G.down}</span>`)
-        : '')
+        + `<button class="tmr" data-act="plus1" aria-label="하루 뒤로 미루기">+1</button>`
+        + `<button class="tmr" data-act="plus7" aria-label="7일 뒤로 미루기">+7</button>`)
     + `<button class="info" data-act="info" aria-label="세부사항 보기">${G.info}</button></div></li>`;
 }
 function draftHTML(color) {
@@ -709,14 +701,6 @@ function toggle(id) {
     setTimeout(() => { S.linger.delete(id); render(); }, 1500);
   }
   store.saveItem({ ...it, completed: done, completedAt: done ? Date.now() : null });
-}
-function swapOrder(id, otherId) {
-  const a = items().find(i => i.id === id), b = items().find(i => i.id === otherId);
-  if (!a || !b) return;
-  let ka = sortKey(a), kb = sortKey(b);
-  if (ka === kb) kb = ka + (sortKey(a) <= sortKey(b) ? 1 : -1);
-  store.saveItem({ ...a, order: kb });
-  store.saveItem({ ...b, order: ka });
 }
 /* ---------- drag & drop reorder ---------- */
 function reorderGroup(ids) {
@@ -947,7 +931,7 @@ document.addEventListener('click', e => {
     case 'toggle': toggle(id); break;
     case 'plus1': { const it = items().find(i => i.id === id); if (it) moveTo(id, addDays(it.due || today(), 1)); break; }
     case 'today': moveTo(id, today()); break;
-    case 'move': swapOrder(id, b.dataset.swap); break;
+    case 'plus7': { const it = items().find(i => i.id === id); if (it) moveTo(id, addDays(it.due || today(), 7)); break; }
     case 'minus1': { const it = items().find(i => i.id === id); if (it) moveTo(id, addDays(it.due || today(), -1)); break; }
     case 'info': openItemSheet(id); break;
     case 'new': startDraft(); break;
