@@ -133,6 +133,15 @@ svg{display:block;flex:none}
 .mv:hover{background:var(--text2);color:var(--surface)}
 .mv.off{opacity:.28;cursor:default}
 .mv.off:hover{background:var(--fill);color:var(--text2)}
+.item{position:relative}
+.grip{position:absolute;left:-22px;top:11px;width:20px;height:22px;display:grid;place-items:center;color:var(--text3);cursor:grab;opacity:0;transition:opacity .12s;touch-action:none;border-radius:6px}
+.item:hover .grip,.item:focus-within .grip{opacity:1}
+.grip:hover{color:var(--text2);background:var(--fill)}
+@media (hover:none){.grip{opacity:.7}}
+@media (max-width:760px){.grip{left:-18px;width:17px}}
+.item.dragging{background:var(--surface);box-shadow:0 6px 20px rgba(0,0,0,.16);border-radius:10px;z-index:2;opacity:.96}
+.item.dragging .grip{opacity:1;cursor:grabbing;color:var(--text2)}
+body.dragging,body.dragging *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}
 .appver{width:100%;font-size:11px;color:var(--text3);text-align:center;margin:-4px 0 0}
 
 .cell{flex:1;min-width:0;display:flex;align-items:flex-start;gap:8px;border-bottom:1px solid var(--sep);padding-bottom:11px}
@@ -304,6 +313,7 @@ const G = {
   chev:   svg('<path d="M15 5 8 12l7 7"/>', { size: 24, sw: 2.4 }),
   up:     svg('<path d="m6 15 6-6 6 6"/>', { size: 14, sw: 2.6 }),
   down:   svg('<path d="m6 9 6 6 6-6"/>', { size: 14, sw: 2.6 }),
+  grip:   svg('<circle cx="9" cy="6" r="1.3" fill="currentColor"/><circle cx="15" cy="6" r="1.3" fill="currentColor"/><circle cx="9" cy="12" r="1.3" fill="currentColor"/><circle cx="15" cy="12" r="1.3" fill="currentColor"/><circle cx="9" cy="18" r="1.3" fill="currentColor"/><circle cx="15" cy="18" r="1.3" fill="currentColor"/>', { size: 16, sw: 0 }),
   chevR:  svg('<path d="m9 6 6 6-6 6"/>', { size: 14, sw: 2.4 }),
   plus:   svg('<path d="M12 6v12M6 12h12"/>', { size: 16, sw: 2.6 }),
   plusS:  svg('<path d="M12 6v12M6 12h12"/>', { size: 18, sw: 2.2 }),
@@ -426,7 +436,8 @@ const S = {
   linger: new Set(),
   composing: false,
   rendering: false,
-  pending: false
+  pending: false,
+  drag: null
 };
 let store = null;
 
@@ -442,7 +453,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.09.30-reorder2';
+const APP_VERSION = '2026.10.01-drag';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -580,7 +591,9 @@ function itemHTML(it, showList, nav) {
   let meta = '';
   if (it.due) meta += `<span class="${isLate(it) ? 'late' : ''}">${dateLabel(it.due)}${it.time ? ', ' + timeLabel(it.time) : ''}</span>`;
   if (showList && l) meta += `<span class="lst"><i></i>${esc(l.name)}</span>`;
-  return `<li class="item${it.completed ? ' done' : ''}" style="--c:${esc(c)}" data-id="${esc(it.id)}">`
+  const grp = nav ? ` data-grp="${esc(nav.grp)}"` : '';
+  return `<li class="item${it.completed ? ' done' : ''}" style="--c:${esc(c)}" data-id="${esc(it.id)}"${grp}>`
+    + (nav ? `<span class="grip" data-drag="1" title="끌어서 순서 바꾸기 (같은 날짜 안에서)" aria-hidden="true">${G.grip}</span>` : '')
     + `<button class="check" data-act="toggle" aria-label="${it.completed ? '완료 취소' : '완료로 표시'}" aria-pressed="${!!it.completed}"><span></span></button>`
     + `<div class="cell"><div class="txt"><div class="tl">`
     + `<textarea class="title" rows="1" data-key="t:${esc(it.id)}" data-role="title" aria-label="미리알림 제목" spellcheck="false">${esc(title)}</textarea></div>`
@@ -606,6 +619,7 @@ function draftHTML(color) {
 
 function renderMain() {
   const main = $('#main');
+  if (S.drag) { S.pending = true; return; }
   if (!store || !store.ready) { main.innerHTML = '<p class="loading">불러오는 중…</p>'; return; }
   const v = currentView();
   main.style.setProperty('--c', v.color);
@@ -629,10 +643,10 @@ function renderMain() {
   }
 
   let any = false, draftPlaced = false;
-  for (const sec of v.sections) {
+  v.sections.forEach((sec, si) => {
     const hasItems = sec.items.length > 0;
     const wantsDraft = S.draft && sec.draftHere && !draftPlaced;
-    if (!hasItems && !wantsDraft && !v.keepEmptySections) continue;
+    if (!hasItems && !wantsDraft && !v.keepEmptySections) return;
     if (sec.header) h += `<h2 class="sec-h" style="--hc:${esc(sec.hc || 'var(--text)')}">${esc(sec.header)}${sec.sub ? `<small>${esc(sec.sub)}</small>` : ''}</h2>`;
     h += `<ul class="items">`;
     sec.items.forEach((it, n) => {
@@ -640,13 +654,13 @@ function renderMain() {
       if (sec.movable && !it.completed) {
         const same = x => x && !x.completed && (x.due || null) === (it.due || null);
         const prev = sec.items[n - 1], next = sec.items[n + 1];
-        nav = { up: same(prev) ? prev.id : null, down: same(next) ? next.id : null };
+        nav = { up: same(prev) ? prev.id : null, down: same(next) ? next.id : null, grp: 's' + si + ':' + (it.due || '-') };
       }
       h += itemHTML(it, showList, nav); any = true;
     });
     if (wantsDraft) { h += draftHTML(draftColor); draftPlaced = true; }
     h += `</ul>`;
-  }
+  });
   if (S.draft && !draftPlaced && !v.noAdd) { h += `<ul class="items">${draftHTML(draftColor)}</ul>`; draftPlaced = true; }
   if (!any && !draftPlaced && !v.keepEmptySections) h += `<p class="empty">${esc(v.empty)}</p>`;
   h += `</div>`;
@@ -655,7 +669,7 @@ function renderMain() {
 }
 
 function render() {
-  if (S.composing) { S.pending = true; return; }
+  if (S.composing || S.drag) { S.pending = true; return; }
   S.pending = false;
   const app = $('#app');
   app.dataset.pane = S.pane;
@@ -704,6 +718,79 @@ function swapOrder(id, otherId) {
   store.saveItem({ ...a, order: kb });
   store.saveItem({ ...b, order: ka });
 }
+/* ---------- drag & drop reorder ---------- */
+function reorderGroup(ids) {
+  const its = ids.map(id => items().find(i => i.id === id)).filter(Boolean);
+  if (its.length !== ids.length) return;
+  const keys = its.map(sortKey).sort((a, b) => a - b);
+  for (let k = 1; k < keys.length; k++) if (keys[k] <= keys[k - 1]) keys[k] = keys[k - 1] + 1;
+  its.forEach((it, k) => { if (sortKey(it) !== keys[k] || typeof it.order !== 'number') store.saveItem({ ...it, order: keys[k] }); });
+}
+function dragStart(e, grip) {
+  const li = grip.closest('.item'); if (!li || !li.dataset.grp) return;
+  if (e.button != null && e.button !== 0) return;
+  e.preventDefault();
+  const ul = li.parentElement;
+  const peers = () => [...ul.querySelectorAll(`:scope > .item[data-grp="${CSS.escape(li.dataset.grp)}"]`)];
+  const before = peers().map(n => n.dataset.id);
+  if (before.length < 2) { toast('같은 날짜에 옮길 항목이 없습니다'); return; }
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  S.drag = { li, ul, peers, before, y0: e.clientY, off: 0, id: e.pointerId, scroller: $('#main'), raf: 0, lastY: e.clientY };
+  li.classList.add('dragging'); document.body.classList.add('dragging');
+  const move = ev => { if (ev.pointerId === S.drag.id) { S.drag.lastY = ev.clientY; dragMove(ev.clientY); } };
+  const end = ev => {
+    if (ev.pointerId !== S.drag.id) return;
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end);
+    dragEnd(ev.type === 'pointercancel');
+  };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
+  const tick = () => {           // auto-scroll near edges
+    const d = S.drag; if (!d) return;
+    const r = d.scroller.getBoundingClientRect(), y = d.lastY, edge = 60;
+    let dy = 0;
+    if (y < r.top + edge + 52) dy = -Math.ceil((r.top + edge + 52 - y) / 6);
+    else if (y > r.bottom - edge - 60) dy = Math.ceil((y - (r.bottom - edge - 60)) / 6);
+    if (dy) { const t0 = d.scroller.scrollTop; d.scroller.scrollTop += dy; const moved = d.scroller.scrollTop - t0; if (moved) { d.y0 -= moved; dragMove(y); } }
+    d.raf = requestAnimationFrame(tick);
+  };
+  S.drag.raf = requestAnimationFrame(tick);
+}
+function dragMove(y) {
+  const d = S.drag; if (!d) return;
+  const { li } = d;
+  li.style.transform = '';
+  const ps = d.peers(), idx = ps.indexOf(li);
+  const baseTop = li.getBoundingClientRect().top;
+  const cur = baseTop + (y - d.y0) ;            // where the dragged row's top would be
+  const h = li.offsetHeight, mid = cur + h / 2;
+  const prev = ps[idx - 1], next = ps[idx + 1];
+  let target = null, after = false;
+  if (prev) { const r = prev.getBoundingClientRect(); if (mid < r.top + r.height / 2) target = prev; }
+  if (!target && next) { const r = next.getBoundingClientRect(); if (mid > r.top + r.height / 2) { target = next; after = true; } }
+  if (target) {
+    const oldTop = baseTop;
+    if (after) target.after(li); else target.before(li);
+    const newTop = li.getBoundingClientRect().top;
+    d.y0 += newTop - oldTop;                    // keep row under the pointer
+  }
+  li.style.transform = `translateY(${y - d.y0}px)`;
+}
+function dragEnd(cancel) {
+  const d = S.drag; if (!d) return;
+  cancelAnimationFrame(d.raf);
+  d.li.classList.remove('dragging'); d.li.style.transform = '';
+  document.body.classList.remove('dragging');
+  const after = d.peers().map(n => n.dataset.id);
+  S.drag = null;
+  const changed = !cancel && after.join('|') !== d.before.join('|');
+  if (changed) reorderGroup(after);
+  if (S.pending || cancel) render();
+}
+document.addEventListener('pointerdown', e => {
+  const g = e.target.closest && e.target.closest('#main .grip[data-drag]');
+  if (g && !S.drag) dragStart(e, g);
+});
+
 function moveTo(id, due) {
   const it = items().find(i => i.id === id); if (!it) return;
   const prev = { ...it };
