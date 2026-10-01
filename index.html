@@ -264,11 +264,11 @@ const parse = s => { const [y, m, d] = s.split('-').map(Number); return new Date
 const addDays = (s, n) => { const d = parse(s); d.setDate(d.getDate() + n); return ymd(d); };
 const WD = '일월화수목금토';
 function dateLabel(s) {
-  const t = today();
-  if (s === t) return '오늘';
-  if (s === addDays(t, 1)) return '내일';
-  if (s === addDays(t, -1)) return '어제';
-  const d = parse(s), now = new Date();
+  const t = today(), d = parse(s);
+  if (s === t) return `오늘 ${mdw(d)}`;
+  if (s === addDays(t, 1)) return `내일 ${mdw(d)}`;
+  if (s === addDays(t, -1)) return `어제 ${mdw(d)}`;
+  const now = new Date();
   return d.getFullYear() === now.getFullYear() ? mdw(d) : `${d.getFullYear()}년 ${mdw(d)}`;
 }
 const mdw = d => `${d.getMonth() + 1}월${d.getDate()}일(${WD[d.getDay()]})`;
