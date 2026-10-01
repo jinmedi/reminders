@@ -269,14 +269,15 @@ function dateLabel(s) {
   if (s === addDays(t, 1)) return '내일';
   if (s === addDays(t, -1)) return '어제';
   const d = parse(s), now = new Date();
-  return d.getFullYear() === now.getFullYear() ? `${d.getMonth() + 1}월 ${d.getDate()}일` : `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`;
+  return d.getFullYear() === now.getFullYear() ? mdw(d) : `${d.getFullYear()}년 ${mdw(d)}`;
 }
+const mdw = d => `${d.getMonth() + 1}월${d.getDate()}일(${WD[d.getDay()]})`;
 function headLabel(s) {
   const d = parse(s), t = today();
-  const base = `${d.getMonth() + 1}월 ${d.getDate()}일`;
+  const base = mdw(d);
   if (s === t) return ['오늘', base];
   if (s === addDays(t, 1)) return ['내일', base];
-  return [base, WD[d.getDay()] + '요일'];
+  return [base, ''];
 }
 function timeLabel(t) {
   const [h, m] = t.split(':').map(Number);
@@ -458,7 +459,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.10.01-enter';
+const APP_VERSION = '2026.10.01-weekday';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
