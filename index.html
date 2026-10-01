@@ -460,7 +460,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.10.01-emptygap';
+const APP_VERSION = '2026.10.01-clearall';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -643,6 +643,7 @@ function renderMain() {
 
   let h = `<header class="mhead"><button class="back" data-act="back">${G.chev}목록</button><div class="acts">`;
   if (v.list) h += `<button data-act="edit-list" data-id="${esc(v.list.id)}">목록 편집</button>`;
+  if (S.sel.t === 'smart' && S.sel.id === 'completed' && !v.search && v.count) h += `<button data-act="clear-completed" style="color:var(--red)">전체 삭제</button>`;
   h += `</div></header><div class="content" data-act-bg="1">`;
   h += `<div class="ttl"><h1>${esc(v.title)}</h1>${v.search ? '' : `<span class="ct">${v.count}</span>`}</div>`;
 
@@ -994,6 +995,12 @@ document.addEventListener('click', e => {
       const v = currentView(); const done = v.done || [];
       if (!done.length) break;
       confirmSheet(`완료된 미리알림 ${done.length}개를 삭제할까요?`, '삭제', () => done.forEach(i => store.removeItem(i.id)));
+      break;
+    }
+    case 'clear-completed': {
+      const done = items().filter(i => i.completed && listById(i.listId));
+      if (!done.length) break;
+      confirmSheet(`완료된 미리알림 ${done.length}개를 모두 삭제할까요?`, '전체 삭제', () => done.forEach(i => store.removeItem(i.id)));
       break;
     }
   }
