@@ -459,7 +459,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.10.01-weekday';
+const APP_VERSION = '2026.10.01-nodupdate';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -509,7 +509,7 @@ function currentView() {
   if (id === 'today') {
     const match = i => i.due && (i.completed ? i.due === T : i.due <= T);
     const its = all.filter(match);
-    return { ...base, sections: [{ items: its.filter(vis).sort(byDue), draftHere: true, movable: true }], count: its.filter(i => !i.completed).length, done: its.filter(i => i.completed), addCtx: { due: T } };
+    return { ...base, sections: [{ items: its.filter(vis).sort(byDue), date: T, draftHere: true, movable: true }], count: its.filter(i => !i.completed).length, done: its.filter(i => i.completed), addCtx: { due: T } };
   }
   if (id === 'scheduled') {
     const its = all.filter(i => i.due);
@@ -525,7 +525,7 @@ function currentView() {
     const sections = keys.map(k => {
       if (k === 'past') return { header: '지난 항목', hc: 'var(--red)', items: groups.get(k), movable: true };
       const [h, s] = headLabel(k);
-      return { header: h, sub: s, items: groups.get(k), draftHere: k === T, movable: true };
+      return { header: h, sub: s, items: groups.get(k), date: k, draftHere: k === T, movable: true };
     });
     return { ...base, sections, count: its.filter(i => !i.completed).length, done: its.filter(i => i.completed), addCtx: { due: T } };
   }
@@ -597,12 +597,14 @@ function renderSide() {
   paint($('#side'), h);
 }
 
-function itemHTML(it, showList, nav) {
+function itemHTML(it, showList, nav, secDate) {
   const l = listById(it.listId);
   const c = l ? l.color : '#007AFF';
   const title = S.editing && S.editing.id === it.id ? S.editing.text : it.title;
   let meta = '';
-  if (it.due) meta += `<span class="${isLate(it) ? 'late' : ''}">${dateLabel(it.due)}${it.time ? ', ' + timeLabel(it.time) : ''}</span>`;
+  // the section header already shows the date, so items on that day only show their time
+  const when = !it.due ? '' : it.due === secDate ? (it.time ? timeLabel(it.time) : '') : dateLabel(it.due) + (it.time ? ', ' + timeLabel(it.time) : '');
+  if (when) meta += `<span class="${isLate(it) ? 'late' : ''}">${when}</span>`;
   if (showList && l) meta += `<span class="lst"><i></i>${esc(l.name)}</span>`;
   const grp = nav ? ` data-grp="${esc(nav.grp)}"` : '';
   return `<li class="item${it.completed ? ' done' : ''}" style="--c:${esc(c)}" data-id="${esc(it.id)}"${grp}>`
@@ -669,7 +671,7 @@ function renderMain() {
         const prev = sec.items[n - 1], next = sec.items[n + 1];
         nav = { up: same(prev) ? prev.id : null, down: same(next) ? next.id : null, grp: 's' + si + ':' + (sec.anyDue ? '*' : (it.due || '-')) };
       }
-      h += itemHTML(it, showList, nav); any = true;
+      h += itemHTML(it, showList, nav, sec.date); any = true;
       if (wantsDraft && it.id === afterId) { h += draftHTML(draftColor); draftPlaced = true; }
     });
     if (wantsDraft && !draftPlaced) { h += draftHTML(draftColor); draftPlaced = true; }
