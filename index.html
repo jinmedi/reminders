@@ -130,11 +130,17 @@ svg{display:block;flex:none}
 .tmr:hover{background:var(--blue);color:#fff}
 .tmr.off{visibility:hidden}
 .item{position:relative}
-.grip{position:absolute;left:-22px;top:11px;width:20px;height:22px;display:grid;place-items:center;color:var(--text3);cursor:grab;opacity:0;transition:opacity .12s;touch-action:none;border-radius:6px}
+.grip{position:absolute;left:-28px;top:8px;width:26px;height:28px;display:grid;place-items:center;color:var(--text3);cursor:grab;opacity:0;transition:opacity .12s;touch-action:none;border-radius:7px}
+.grip svg{width:18px;height:18px}
 .item:hover .grip,.item:focus-within .grip{opacity:1}
 .grip:hover{color:var(--text2);background:var(--fill)}
-@media (hover:none){.grip{opacity:.7}}
-@media (max-width:760px){.grip{left:-18px;width:17px}}
+@media (max-width:760px),(hover:none){
+  .grip{position:static;flex:none;width:32px;height:36px;margin:-7px -8px -7px -6px;opacity:.65}
+  .grip svg{width:22px;height:22px}
+}
+.eye{flex:none;width:30px;height:22px;border-radius:11px;background:var(--fill);color:var(--text2);display:grid;place-items:center;transition:background-color .12s,color .12s}
+.eye:hover{background:var(--text2);color:var(--surface)}
+.eye.on{background:#5856D6;color:#fff}
 .item.dragging{background:var(--surface);box-shadow:0 6px 20px rgba(0,0,0,.16);border-radius:10px;z-index:2;opacity:.96}
 .item.dragging .grip{opacity:1;cursor:grabbing;color:var(--text2)}
 body.dragging,body.dragging *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}
@@ -216,7 +222,8 @@ textarea.big{min-height:72px;color:var(--text)}
   .back{display:inline-flex}
   .main{padding:0 18px}
   .cell{gap:5px}
-  .tmr{width:34px;font-size:11px}
+  .tmr{width:31px;font-size:11px}
+  .eye{width:27px}
   .mhead{margin:0 -18px;padding:0 18px}
   .ttl h1,.ttl .ct{font-size:30px}
   .side-foot{background:var(--bg)}
@@ -309,6 +316,8 @@ const G = {
   up:     svg('<path d="m6 15 6-6 6 6"/>', { size: 14, sw: 2.6 }),
   down:   svg('<path d="m6 9 6 6 6-6"/>', { size: 14, sw: 2.6 }),
   grip:   svg('<circle cx="9" cy="6" r="1.3" fill="currentColor"/><circle cx="15" cy="6" r="1.3" fill="currentColor"/><circle cx="9" cy="12" r="1.3" fill="currentColor"/><circle cx="15" cy="12" r="1.3" fill="currentColor"/><circle cx="9" cy="18" r="1.3" fill="currentColor"/><circle cx="15" cy="18" r="1.3" fill="currentColor"/>', { size: 16, sw: 0 }),
+  eye:    svg('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>', { size: 15, sw: 2 }),
+  eyeOff: svg('<path d="M9.9 5.8A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4M6.2 7.4C3.9 9.1 2.5 12 2.5 12S6 18.5 12 18.5c1.6 0 3-.4 4.2-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="m3.5 3.5 17 17"/>', { size: 15, sw: 2 }),
   chevR:  svg('<path d="m9 6 6 6-6 6"/>', { size: 14, sw: 2.4 }),
   plus:   svg('<path d="M12 6v12M6 12h12"/>', { size: 16, sw: 2.6 }),
   plusS:  svg('<path d="M12 6v12M6 12h12"/>', { size: 18, sw: 2.2 }),
@@ -325,7 +334,8 @@ const SMART = {
   today:     { label: '오늘',     color: '#007AFF',     icon: () => todayIcon() },
   scheduled: { label: '예정',     color: '#FF3B30',     icon: () => G.cal },
   all:       { label: '전체',     color: 'var(--allc)', icon: () => G.tray },
-  completed: { label: '완료됨',   color: '#8E8E93',     icon: () => G.check }
+  completed: { label: '완료됨',   color: '#8E8E93',     icon: () => G.check },
+  hidden:    { label: '숨김',     color: '#5856D6',     icon: () => G.eyeOff }
 };
 
 let toastT;
@@ -448,13 +458,14 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.10.01-plus7';
+const APP_VERSION = '2026.10.01-hide';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
   const ls = lists();
   const lmap = new Map(ls.map(l => [l.id, l]));
-  const all = items().filter(i => lmap.has(i.listId));
+  const everything = items().filter(i => lmap.has(i.listId));
+  const all = everything.filter(i => !i.hidden || i.due === T);   // hidden: only on its day
   const show = !!S.showDone[viewKey()];
   const vis = i => !i.completed || show || S.linger.has(i.id);
   const byOrder = (a, b) => sortKey(a) - sortKey(b);
@@ -463,7 +474,7 @@ function currentView() {
 
   const q = S.search.trim().toLowerCase();
   if (q) {
-    const hit = all.filter(i => (i.title || '').toLowerCase().includes(q) || (i.notes || '').toLowerCase().includes(q));
+    const hit = everything.filter(i => (i.title || '').toLowerCase().includes(q) || (i.notes || '').toLowerCase().includes(q));
     const sections = ls.map(l => ({ header: l.name, hc: l.color, items: hit.filter(i => i.listId === l.id).sort((a, b) => byDone(a, b) || byOrder(a, b)) })).filter(s => s.items.length);
     return { title: `‘${S.search.trim()}’ 검색 결과`, color: 'var(--text)', sections, search: true, noAdd: true, empty: '일치하는 미리알림이 없습니다' };
   }
@@ -486,8 +497,12 @@ function currentView() {
   const id = S.sel.id, meta = SMART[id] || SMART.today;
   const base = { title: meta.label, color: meta.color, smart: true, doneLine: true, empty: '미리알림 없음' };
 
+  if (id === 'hidden') {
+    const its = everything.filter(i => i.hidden);
+    return { ...base, sections: [{ items: its.filter(vis).sort(byDue) }], count: its.filter(i => !i.completed).length, done: its.filter(i => i.completed), noAdd: true, empty: '숨긴 미리알림 없음' };
+  }
   if (id === 'completed') {
-    const its = all.filter(i => i.completed).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
+    const its = everything.filter(i => i.completed).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
     return { ...base, sections: [{ items: its }], count: its.length, doneLine: false, noAdd: true, done: [], empty: '완료된 미리알림 없음' };
   }
   if (id === 'today') {
@@ -515,7 +530,7 @@ function currentView() {
   }
   // all
   const defId = ls.length ? ls[0].id : null;
-  const sections = ls.map(l => ({ header: l.name, hc: l.color, items: all.filter(i => i.listId === l.id && vis(i)).sort(byDue), draftHere: l.id === defId, listRow: true, movable: true }));
+  const sections = ls.map(l => ({ header: l.name, hc: l.color, items: all.filter(i => i.listId === l.id && vis(i)).sort(byOrder), draftHere: l.id === defId, listRow: true, movable: true, anyDue: true }));
   return { ...base, sections, count: all.filter(i => !i.completed).length, done: all.filter(i => i.completed), addCtx: {}, keepEmptySections: true };
 }
 
@@ -548,12 +563,14 @@ function renderSide() {
   const T = today();
   const ls = lists();
   const ids = new Set(ls.map(l => l.id));
-  const act = items().filter(i => !i.completed && ids.has(i.listId));
+  const act0 = items().filter(i => !i.completed && ids.has(i.listId));
+  const act = act0.filter(i => !i.hidden || i.due === T);
   const cnt = {
     today: act.filter(i => i.due && i.due <= T).length,
     scheduled: act.filter(i => i.due).length,
     all: act.length,
-    completed: ''
+    completed: '',
+    hidden: act0.filter(i => i.hidden).length
   };
   const searching = !!S.search.trim();
   let h = `<div class="side-top"><label class="search">${G.search}<input id="search" type="search" data-key="search" placeholder="검색" autocomplete="off" value="${esc(S.search)}" aria-label="미리알림 검색"></label></div>`;
@@ -588,7 +605,7 @@ function itemHTML(it, showList, nav) {
   if (showList && l) meta += `<span class="lst"><i></i>${esc(l.name)}</span>`;
   const grp = nav ? ` data-grp="${esc(nav.grp)}"` : '';
   return `<li class="item${it.completed ? ' done' : ''}" style="--c:${esc(c)}" data-id="${esc(it.id)}"${grp}>`
-    + (nav ? `<span class="grip" data-drag="1" title="끌어서 순서 바꾸기 (같은 날짜 안에서)" aria-hidden="true">${G.grip}</span>` : '')
+    + (nav ? `<span class="grip" data-drag="1" title="끌어서 순서 바꾸기" aria-hidden="true">${G.grip}</span>` : '')
     + `<button class="check" data-act="toggle" aria-label="${it.completed ? '완료 취소' : '완료로 표시'}" aria-pressed="${!!it.completed}"><span></span></button>`
     + `<div class="cell"><div class="txt"><div class="tl">`
     + `<textarea class="title" rows="1" data-key="t:${esc(it.id)}" data-role="title" aria-label="미리알림 제목" spellcheck="false">${esc(title)}</textarea></div>`
@@ -602,6 +619,7 @@ function itemHTML(it, showList, nav) {
           : `<button class="tmr" data-act="today" aria-label="오늘로 옮기기">오늘</button>`)
         + `<button class="tmr" data-act="plus1" aria-label="하루 뒤로 미루기">+1</button>`
         + `<button class="tmr" data-act="plus7" aria-label="7일 뒤로 미루기">+7</button>`)
+    + `<button class="eye${it.hidden ? ' on' : ''}" data-act="hide" aria-pressed="${!!it.hidden}" aria-label="${it.hidden ? '숨김 해제' : '숨기기'}" title="${it.hidden ? '숨김 해제' : '숨기기 (예약된 날에만 보임)'}">${it.hidden ? G.eyeOff : G.eye}</button>`
     + `<button class="info" data-act="info" aria-label="세부사항 보기">${G.info}</button></div></li>`;
 }
 function draftHTML(color) {
@@ -646,7 +664,7 @@ function renderMain() {
       if (sec.movable && !it.completed) {
         const same = x => x && !x.completed && (x.due || null) === (it.due || null);
         const prev = sec.items[n - 1], next = sec.items[n + 1];
-        nav = { up: same(prev) ? prev.id : null, down: same(next) ? next.id : null, grp: 's' + si + ':' + (it.due || '-') };
+        nav = { up: same(prev) ? prev.id : null, down: same(next) ? next.id : null, grp: 's' + si + ':' + (sec.anyDue ? '*' : (it.due || '-')) };
       }
       h += itemHTML(it, showList, nav); any = true;
     });
@@ -775,6 +793,14 @@ document.addEventListener('pointerdown', e => {
   if (g && !S.drag) dragStart(e, g);
 });
 
+function toggleHidden(id) {
+  const it = items().find(i => i.id === id); if (!it) return;
+  const hidden = !it.hidden;
+  store.saveItem({ ...it, hidden });
+  const msg = !hidden ? '숨김을 해제했습니다'
+    : it.due ? `숨겼습니다 · ${dateLabel(it.due)}에만 보입니다` : '숨겼습니다 · 날짜가 없어 ‘숨김’에서만 보입니다';
+  toast(msg, { label: '실행 취소', fn: () => { const cur = items().find(i => i.id === id); if (cur) store.saveItem({ ...cur, hidden: !hidden }); } });
+}
 function moveTo(id, due) {
   const it = items().find(i => i.id === id); if (!it) return;
   const prev = { ...it };
@@ -931,6 +957,7 @@ document.addEventListener('click', e => {
     case 'toggle': toggle(id); break;
     case 'plus1': { const it = items().find(i => i.id === id); if (it) moveTo(id, addDays(it.due || today(), 1)); break; }
     case 'today': moveTo(id, today()); break;
+    case 'hide': toggleHidden(id); break;
     case 'plus7': { const it = items().find(i => i.id === id); if (it) moveTo(id, addDays(it.due || today(), 7)); break; }
     case 'minus1': { const it = items().find(i => i.id === id); if (it) moveTo(id, addDays(it.due || today(), -1)); break; }
     case 'info': openItemSheet(id); break;
@@ -1195,7 +1222,7 @@ const GS = (() => {
       }
       if (m.gid) ops.push({ op: 'patch', list: m.gList, id: m.gid, body: toBody(it), ref: 'p' + it.id });
       else ops.push({ op: 'insert', list: target, body: toBody(it), ref: 'i' + it.id });
-      ops.push({ op: 'meta', kind: 'T', id: m.gid || '@i' + it.id, value: { t: it.time || null, o: sortKey(it) }, ref: 't' + it.id });
+      ops.push({ op: 'meta', kind: 'T', id: m.gid || '@i' + it.id, value: { t: it.time || null, o: sortKey(it), h: it.hidden ? 1 : 0 }, ref: 't' + it.id });
       imeta.push(m);
     }
     return { ops, lmeta, imeta, nDel, nLDel };
@@ -1305,14 +1332,14 @@ const GS = (() => {
         const done = t.status === 'completed';
         const doneAt = done ? (Date.parse(t.completed) || Date.now()) : null;
         const rawM = meta['T:' + t.id] || null;
-        let tm = null, ord = null;
-        if (rawM && rawM.charAt(0) === '{') { const mj = parse(rawM) || {}; tm = mj.t || null; ord = typeof mj.o === 'number' ? mj.o : null; }
+        let tm = null, ord = null, hid = null;
+        if (rawM && rawM.charAt(0) === '{') { const mj = parse(rawM) || {}; tm = mj.t || null; ord = typeof mj.o === 'number' ? mj.o : null; hid = !!mj.h; }
         else tm = rawM;
         if (!loc) {
           g.raw.saveItem({
             id: 'g-' + safeId(t.id), title: t.title.trim(), notes: t.notes || '',
             listId: ll.id, due: due || ((done || rawM) ? null : T), time: tm,
-            ...(ord != null ? { order: ord } : {}),
+            ...(ord != null ? { order: ord } : {}), ...(hid ? { hidden: true } : {}),
             completed: done, completedAt: doneAt,
             createdAt: Date.parse(t.updated) || Date.now(),
             gid: t.id, gList: x.id, gUpdated: t.updated
@@ -1320,12 +1347,12 @@ const GS = (() => {
         } else if (loc.gUpdated !== t.updated || loc.listId !== ll.id) {
           g.raw.saveItem({
             ...loc, title: t.title.trim(), notes: t.notes || '', listId: ll.id,
-            due: rawM ? due : (due || loc.due), time: tm, ...(ord != null ? { order: ord } : {}), completed: done,
+            due: rawM ? due : (due || loc.due), time: tm, ...(ord != null ? { order: ord } : {}), ...(hid != null ? { hidden: hid } : {}), completed: done,
             completedAt: done ? (loc.completedAt || doneAt) : null,
             gList: x.id, gUpdated: t.updated
           });
-        } else if ((loc.time || null) !== tm || (ord != null && loc.order !== ord)) {
-          g.raw.saveItem({ ...loc, time: tm, ...(ord != null ? { order: ord } : {}) });
+        } else if ((loc.time || null) !== tm || (ord != null && loc.order !== ord) || (hid != null && !!loc.hidden !== hid)) {
+          g.raw.saveItem({ ...loc, time: tm, ...(ord != null ? { order: ord } : {}), ...(hid != null ? { hidden: hid } : {}) });
         }
       }
       store.items()
