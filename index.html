@@ -458,7 +458,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.10.01-hide';
+const APP_VERSION = '2026.10.01-enter';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -519,7 +519,7 @@ function currentView() {
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(i);
     }
-    if (S.draft && !groups.has(T)) groups.set(T, []);
+    if (S.draft && !S.draft.afterId && !groups.has(T)) groups.set(T, []);
     const keys = [...groups.keys()].sort((a, b) => a === 'past' ? -1 : b === 'past' ? 1 : a.localeCompare(b));
     const sections = keys.map(k => {
       if (k === 'past') return { header: '지난 항목', hc: 'var(--red)', items: groups.get(k), movable: true };
@@ -636,7 +636,7 @@ function renderMain() {
   const showList = !!v.smart && S.sel.id !== 'all' || !!v.search;
   const draftColor = (() => {
     if (v.list) return v.list.color;
-    const lid = (v.addCtx && v.addCtx.listId) || (lists()[0] || {}).id;
+    const lid = (S.draft && S.draft.listId) || (v.addCtx && v.addCtx.listId) || (lists()[0] || {}).id;
     const l = listById(lid); return l ? l.color : '#007AFF';
   })();
 
@@ -653,9 +653,11 @@ function renderMain() {
   }
 
   let any = false, draftPlaced = false;
+  const afterId = S.draft && S.draft.afterId;
+  const afterSec = afterId ? v.sections.findIndex(sec => sec.items.some(i => i.id === afterId)) : -1;
   v.sections.forEach((sec, si) => {
     const hasItems = sec.items.length > 0;
-    const wantsDraft = S.draft && sec.draftHere && !draftPlaced;
+    const wantsDraft = S.draft && (afterSec >= 0 ? si === afterSec : sec.draftHere) && !draftPlaced;
     if (!hasItems && !wantsDraft && !v.keepEmptySections) return;
     if (sec.header) h += `<h2 class="sec-h" style="--hc:${esc(sec.hc || 'var(--text)')}">${esc(sec.header)}${sec.sub ? `<small>${esc(sec.sub)}</small>` : ''}</h2>`;
     h += `<ul class="items">`;
@@ -667,8 +669,9 @@ function renderMain() {
         nav = { up: same(prev) ? prev.id : null, down: same(next) ? next.id : null, grp: 's' + si + ':' + (sec.anyDue ? '*' : (it.due || '-')) };
       }
       h += itemHTML(it, showList, nav); any = true;
+      if (wantsDraft && it.id === afterId) { h += draftHTML(draftColor); draftPlaced = true; }
     });
-    if (wantsDraft) { h += draftHTML(draftColor); draftPlaced = true; }
+    if (wantsDraft && !draftPlaced) { h += draftHTML(draftColor); draftPlaced = true; }
     h += `</ul>`;
   });
   if (S.draft && !draftPlaced && !v.noAdd) { h += `<ul class="items">${draftHTML(draftColor)}</ul>`; draftPlaced = true; }
@@ -690,26 +693,33 @@ function render() {
 }
 
 /* ---------- actions ---------- */
-function startDraft() {
+function startDraft(after) {
   const v = currentView();
   if (v.noAdd) return;
-  S.draft = { text: '' };
+  S.draft = { text: '', ...(after || {}) };
   renderMain();
   const t = $('#main [data-key="draft"]');
   if (t) { t.focus(); t.scrollIntoView({ block: 'nearest' }); }
 }
-function commitDraft(text) {
+function commitDraft(text, d) {
   const title = text.replace(/\s*\n\s*/g, ' ').trim();
-  if (!title) return false;
+  if (!title) return null;
   const ctx = currentView().addCtx || {};
+  const id = newId();
   store.saveItem({
-    id: newId(), title, notes: '',
-    listId: ctx.listId || defaultListId(),
-    due: ctx.due || null, time: null,
+    id, title, notes: '',
+    listId: (d && d.listId) || ctx.listId || defaultListId(),
+    due: d && 'due' in d ? d.due : (ctx.due || null), time: null,
     completed: false, completedAt: null,
     createdAt: Date.now()
   });
-  return true;
+  return id;
+}
+// context for a draft placed right below an existing item: same list, same day where the view groups by day
+function draftAfter(it) {
+  const ctx = currentView().addCtx || {};
+  const T = today();
+  return { afterId: it.id, listId: it.listId, due: ctx.due ? (it.due && it.due > T ? it.due : ctx.due) : null };
 }
 function toggle(id) {
   const it = items().find(i => i.id === id); if (!it) return;
@@ -1019,9 +1029,9 @@ document.addEventListener('focusout', e => {
     else setTimeout(render, 0);
   } else if (role === 'draft') {
     if (!S.draft) return;
-    const v = t.value;
+    const v = t.value, d = S.draft;
     S.draft = null;
-    commitDraft(v);
+    commitDraft(v, d);
     setTimeout(render, 0);
   } else if (t.id === 'search' && !S.search.trim()) {
     setTimeout(render, 0);
@@ -1045,13 +1055,21 @@ document.addEventListener('keydown', e => {
   }
   if (role === 'draft') {
     e.preventDefault();
-    if (commitDraft(t.value)) {
-      S.draft = { text: '' };
+    const prev = S.draft;
+    const id = commitDraft(t.value, prev);
+    if (id) {
+      S.draft = prev && prev.afterId ? { ...prev, text: '', afterId: id } : { text: '' };
       render();
       const d = $('#main [data-key="draft"]'); if (d) d.scrollIntoView({ block: 'nearest' });
     } else { S.draft = null; t.blur(); renderMain(); }
   } else if (role === 'title') {
-    e.preventDefault(); t.blur();
+    e.preventDefault();
+    const li = t.closest('.item');
+    const it = li && items().find(i => i.id === li.dataset.id);
+    let last = !!it && !it.completed && !!t.value.trim();
+    for (let n = li && li.nextElementSibling; last && n; n = n.nextElementSibling) if (!n.classList.contains('done')) last = false;
+    t.blur();
+    if (last) startDraft(draftAfter(it));
   }
 });
 
