@@ -460,7 +460,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.10.01-nextday';
+const APP_VERSION = '2026.10.01-filldays';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -521,10 +521,10 @@ function currentView() {
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(i);
     }
-    // one empty day after the last day with items, as a drop target (today if nothing is upcoming)
+    // every day from today through the day after the last day with items, as drop targets (today if nothing is upcoming)
     const last = [...groups.keys()].filter(k => k !== 'past').sort().pop();
-    const spare = last ? addDays(last, 1) : T;
-    if (!groups.has(spare)) groups.set(spare, []);
+    const end = last ? addDays(last, 1) : T;
+    for (let k = T; k <= end; k = addDays(k, 1)) if (!groups.has(k)) groups.set(k, []);
     if (S.draft && !S.draft.afterId && !groups.has(T)) groups.set(T, []);
     const keys = [...groups.keys()].sort((a, b) => a === 'past' ? -1 : b === 'past' ? 1 : a.localeCompare(b));
     const sections = keys.map(k => {
