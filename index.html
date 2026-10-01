@@ -460,7 +460,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.10.01-clearall';
+const APP_VERSION = '2026.10.01-nextday';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -521,12 +521,16 @@ function currentView() {
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(i);
     }
-    for (let n = 0; n < 7; n++) if (!groups.has(addDays(T, n))) groups.set(addDays(T, n), []);   // always offer this week as drop targets
+    // one empty day after the last day with items, as a drop target (today if nothing is upcoming)
+    const last = [...groups.keys()].filter(k => k !== 'past').sort().pop();
+    const spare = last ? addDays(last, 1) : T;
+    if (!groups.has(spare)) groups.set(spare, []);
+    if (S.draft && !S.draft.afterId && !groups.has(T)) groups.set(T, []);
     const keys = [...groups.keys()].sort((a, b) => a === 'past' ? -1 : b === 'past' ? 1 : a.localeCompare(b));
     const sections = keys.map(k => {
       if (k === 'past') return { header: '지난 항목', hc: 'var(--red)', items: groups.get(k), movable: true, zone: 'past' };
       const [h, s] = headLabel(k);
-      return { header: h, sub: s, items: groups.get(k), date: k, draftHere: k === T, movable: true, zone: 'd:' + k, keep: k < addDays(T, 7) };
+      return { header: h, sub: s, items: groups.get(k), date: k, draftHere: k === T, movable: true, zone: 'd:' + k, keep: true };
     });
     return { ...base, sections, count: its.filter(i => !i.completed).length, done: its.filter(i => i.completed), addCtx: { due: T } };
   }
