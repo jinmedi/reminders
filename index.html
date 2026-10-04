@@ -460,7 +460,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.10.01-filldays';
+const APP_VERSION = '2026.10.04-hiddendays';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -499,9 +499,35 @@ function currentView() {
   const id = S.sel.id, meta = SMART[id] || SMART.today;
   const base = { title: meta.label, color: meta.color, smart: true, doneLine: true, empty: '미리알림 없음' };
 
+  // day sections like the scheduled view: overdue, then every day from today through the day after the last one with items
+  const daySections = (shown, fill) => {
+    const groups = new Map();
+    for (const i of shown) {
+      const k = (!i.completed && i.due < T) ? 'past' : i.due;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(i);
+    }
+    if (fill) {
+      const last = [...groups.keys()].filter(k => k !== 'past').sort().pop();
+      const end = last ? addDays(last, 1) : T;
+      for (let k = T; k <= end; k = addDays(k, 1)) if (!groups.has(k)) groups.set(k, []);
+    }
+    if (S.draft && !S.draft.afterId && !groups.has(T)) groups.set(T, []);
+    const keys = [...groups.keys()].sort((a, b) => a === 'past' ? -1 : b === 'past' ? 1 : a.localeCompare(b));
+    return keys.map(k => {
+      if (k === 'past') return { header: '지난 항목', hc: 'var(--red)', items: groups.get(k), movable: true, zone: 'past' };
+      const [h, s] = headLabel(k);
+      return { header: h, sub: s, items: groups.get(k), date: k, draftHere: k === T, movable: true, zone: 'd:' + k, keep: true };
+    });
+  };
+
   if (id === 'hidden') {
     const its = everything.filter(i => i.hidden);
-    return { ...base, sections: [{ items: its.filter(vis).sort(byDue) }], count: its.filter(i => !i.completed).length, done: its.filter(i => i.completed), noAdd: true, empty: '숨긴 미리알림 없음' };
+    const shown = its.filter(vis).sort(byDue);
+    const dated = shown.filter(i => i.due), undated = shown.filter(i => !i.due);
+    const sections = daySections(dated, dated.length > 0);
+    if (undated.length) sections.push({ header: '날짜 없음', items: undated, movable: true, zone: 'none' });
+    return { ...base, sections, count: its.filter(i => !i.completed).length, done: its.filter(i => i.completed), noAdd: true, empty: '숨긴 미리알림 없음' };
   }
   if (id === 'completed') {
     const its = everything.filter(i => i.completed).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
@@ -514,24 +540,7 @@ function currentView() {
   }
   if (id === 'scheduled') {
     const its = all.filter(i => i.due);
-    const shown = its.filter(vis).sort(byDue);
-    const groups = new Map();
-    for (const i of shown) {
-      const k = (!i.completed && i.due < T) ? 'past' : i.due;
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(i);
-    }
-    // every day from today through the day after the last day with items, as drop targets (today if nothing is upcoming)
-    const last = [...groups.keys()].filter(k => k !== 'past').sort().pop();
-    const end = last ? addDays(last, 1) : T;
-    for (let k = T; k <= end; k = addDays(k, 1)) if (!groups.has(k)) groups.set(k, []);
-    if (S.draft && !S.draft.afterId && !groups.has(T)) groups.set(T, []);
-    const keys = [...groups.keys()].sort((a, b) => a === 'past' ? -1 : b === 'past' ? 1 : a.localeCompare(b));
-    const sections = keys.map(k => {
-      if (k === 'past') return { header: '지난 항목', hc: 'var(--red)', items: groups.get(k), movable: true, zone: 'past' };
-      const [h, s] = headLabel(k);
-      return { header: h, sub: s, items: groups.get(k), date: k, draftHere: k === T, movable: true, zone: 'd:' + k, keep: true };
-    });
+    const sections = daySections(its.filter(vis).sort(byDue), true);
     return { ...base, sections, count: its.filter(i => !i.completed).length, done: its.filter(i => i.completed), addCtx: { due: T } };
   }
   // all
@@ -732,8 +741,9 @@ function toggle(id) {
 }
 /* ---------- drag & drop: reorder, and move across dates ---------- */
 // ul[data-zone]: 'd:YYYY-MM-DD' = a day section (items dropped here take that date),
-// 'past' = overdue section, 'nb' = mixed-date list (dropped item takes its neighbour's date),
-// 'own' = reorder only. Day sections and the past section accept drops from one another.
+// 'none' = undated section (items dropped here lose their date), 'past' = overdue section,
+// 'nb' = mixed-date list (dropped item takes its neighbour's date), 'own' = reorder only.
+// Items from day, undated and past sections can be dropped into any day or undated section.
 const liveItems = ul => [...ul.children].filter(n => n.classList.contains('item') && !n.classList.contains('draft') && !n.classList.contains('done'));
 function dragStart(e, grip) {
   const li = grip.closest('.item'), ul = li && li.parentElement;
@@ -741,8 +751,9 @@ function dragStart(e, grip) {
   if (e.button != null && e.button !== 0) return;
   e.preventDefault();
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  const z = ul.dataset.zone, cross = z.startsWith('d:') || z === 'past';
-  const zones = [...$('#main').querySelectorAll('ul.items[data-zone]')].filter(u => u === ul || (cross && u.dataset.zone.startsWith('d:')));
+  const target = u => u.dataset.zone.startsWith('d:') || u.dataset.zone === 'none';
+  const cross = target(ul) || ul.dataset.zone === 'past';
+  const zones = [...$('#main').querySelectorAll('ul.items[data-zone]')].filter(u => u === ul || (cross && target(u)));
   S.drag = { li, ul, zones, next0: li.nextElementSibling, y0: e.clientY, id: e.pointerId, scroller: $('#main'), raf: 0, lastY: e.clientY };
   li.classList.add('dragging'); document.body.classList.add('dragging');
   const move = ev => { if (ev.pointerId === S.drag.id) { S.drag.lastY = ev.clientY; dragMove(ev.clientY); } };
@@ -796,6 +807,7 @@ function dragEnd(cancel) {
   const z = ul.dataset.zone, find = n => n && items().find(i => i.id === n.dataset.id);
   let due = it.due || null;
   if (z.startsWith('d:')) due = z.slice(2);
+  else if (z === 'none') due = null;
   else if (z === 'nb') {
     const live = liveItems(ul), k = live.indexOf(li);
     const nb = find(live[k - 1]) || find(live[k + 1]);
