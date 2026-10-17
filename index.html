@@ -437,6 +437,7 @@ const S = {
   sel: { t: 'smart', id: 'today' },
   pane: 'side',
   showDone: {},
+  showHidden: false,
   search: '',
   editing: null,
   draft: null,
@@ -460,7 +461,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.10.04-hiddendays';
+const APP_VERSION = '2026.10.17-schedhidden';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -539,9 +540,12 @@ function currentView() {
     return { ...base, sections: [{ items: its.filter(vis).sort(byDue), date: T, draftHere: true, movable: true, zone: 'nb' }], count: its.filter(i => !i.completed).length, done: its.filter(i => i.completed), addCtx: { due: T } };
   }
   if (id === 'scheduled') {
-    const its = all.filter(i => i.due);
-    const sections = daySections(its.filter(vis).sort(byDue), true);
-    return { ...base, sections, count: its.filter(i => !i.completed).length, done: its.filter(i => i.completed), addCtx: { due: T } };
+    // completed items are not shown here; instead the line under the title shows/hides hidden items
+    const its = (S.showHidden ? everything : all).filter(i => i.due);
+    const live = i => !i.completed || S.linger.has(i.id);
+    const sections = daySections(its.filter(live).sort(byDue), true);
+    const hiddenN = everything.filter(i => i.due && i.hidden && !i.completed && i.due !== T).length;
+    return { ...base, sections, count: all.filter(i => i.due && !i.completed).length, doneLine: false, hiddenLine: hiddenN, addCtx: { due: T } };
   }
   // all
   const defId = ls.length ? ls[0].id : null;
@@ -663,6 +667,8 @@ function renderMain() {
   if (v.doneLine && v.done && v.done.length) {
     const shown = !!S.showDone[viewKey()];
     h += `<div class="done-line"><span>완료됨 ${v.done.length}개</span><button data-act="clear-done">지우기</button><button data-act="toggle-done">${shown ? '가리기' : '보기'}</button></div>`;
+  } else if (v.hiddenLine) {
+    h += `<div class="done-line"><span>숨김 ${v.hiddenLine}개</span><button data-act="toggle-hidden-items">${S.showHidden ? '가리기' : '보기'}</button></div>`;
   } else {
     h += `<div class="rule"></div>`;
   }
@@ -1006,6 +1012,7 @@ document.addEventListener('click', e => {
     case 'add-list': openListSheet(null); break;
     case 'google': openGoogleSheet(); break;
     case 'edit-list': openListSheet(id); break;
+    case 'toggle-hidden-items': S.showHidden = !S.showHidden; render(); break;
     case 'toggle-done': { const k = viewKey(); S.showDone[k] = !S.showDone[k]; render(); break; }
     case 'clear-done': {
       const v = currentView(); const done = v.done || [];
