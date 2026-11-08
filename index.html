@@ -330,10 +330,8 @@ const G = {
   check:  svg('<path d="m5.5 12.5 4.2 4.2 8.8-9.4"/>', { size: 17, sw: 2.6 }),
   folder: svg('<path d="M3.5 7c0-1 .8-1.8 1.8-1.8h4.3l2 2.2h7.1c1 0 1.8.8 1.8 1.8v8.3c0 1-.8 1.8-1.8 1.8H5.3c-1 0-1.8-.8-1.8-1.8z"/>', { size: 17, sw: 1.9 })
 };
-const todayIcon = () => `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="3.8" y="5" width="16.4" height="15" rx="2.5"/><path d="M3.8 9.8h16.4M8 3.2v3.4M16 3.2v3.4" stroke-linecap="round"/><text x="12" y="18" text-anchor="middle" font-size="8" font-weight="700" fill="currentColor" stroke="none" font-family="-apple-system,Segoe UI,sans-serif">${new Date().getDate()}</text></svg>`;
 
 const SMART = {
-  today:     { label: '오늘',     color: '#007AFF',     icon: () => todayIcon() },
   scheduled: { label: '예정',     color: '#FF3B30',     icon: () => G.cal },
   all:       { label: '전체',     color: 'var(--allc)', icon: () => G.tray },
   completed: { label: '완료됨',   color: '#8E8E93',     icon: () => G.check },
@@ -434,8 +432,8 @@ function makeCloudStore(db, userId) {
 
 /* ---------- state ---------- */
 const S = {
-  sel: { t: 'smart', id: 'today' },
-  pane: 'side',
+  sel: { t: 'smart', id: 'scheduled' },
+  pane: 'main',
   showDone: {},
   showHidden: false,
   search: '',
@@ -461,7 +459,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.10.17-schedhidden';
+const APP_VERSION = '2026.11.08-notoday';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -494,10 +492,10 @@ function currentView() {
         addCtx: { listId: l.id }, empty: '미리알림 없음'
       };
     }
-    S.sel = { t: 'smart', id: 'today' };
+    S.sel = { t: 'smart', id: 'scheduled' };
   }
 
-  const id = S.sel.id, meta = SMART[id] || SMART.today;
+  const id = S.sel.id, meta = SMART[id] || SMART.scheduled;
   const base = { title: meta.label, color: meta.color, smart: true, doneLine: true, empty: '미리알림 없음' };
 
   // day sections like the scheduled view: overdue, then every day from today through the day after the last one with items
@@ -533,11 +531,6 @@ function currentView() {
   if (id === 'completed') {
     const its = everything.filter(i => i.completed).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
     return { ...base, sections: [{ items: its }], count: its.length, doneLine: false, noAdd: true, done: [], empty: '완료된 미리알림 없음' };
-  }
-  if (id === 'today') {
-    const match = i => i.due && (i.completed ? i.due === T : i.due <= T);
-    const its = all.filter(match);
-    return { ...base, sections: [{ items: its.filter(vis).sort(byDue), date: T, draftHere: true, movable: true, zone: 'nb' }], count: its.filter(i => !i.completed).length, done: its.filter(i => i.completed), addCtx: { due: T } };
   }
   if (id === 'scheduled') {
     // completed items are not shown here; instead the line under the title shows/hides hidden items
@@ -585,7 +578,6 @@ function renderSide() {
   const act0 = items().filter(i => !i.completed && ids.has(i.listId));
   const act = act0.filter(i => !i.hidden || i.due === T);
   const cnt = {
-    today: act.filter(i => i.due && i.due <= T).length,
     scheduled: act.filter(i => i.due).length,
     all: act.length,
     completed: '',
@@ -981,7 +973,7 @@ function openListSheet(id) {
       confirmSheet(`‘${l.name}’ 목록${n ? `과 미리알림 ${n}개` : ''}를 삭제할까요?${l.gListId ? ' Google 할 일과 다른 기기에서도 삭제됩니다.' : ''}`, '삭제', () => {
         items().filter(i => i.listId === l.id).forEach(i => store.removeItem(i.id));
         store.removeList(l.id);
-        if (S.sel.t === 'list' && S.sel.id === l.id) { S.sel = { t: 'smart', id: 'today' }; }
+        if (S.sel.t === 'list' && S.sel.id === l.id) { S.sel = { t: 'smart', id: 'scheduled' }; }
         render();
       });
     }
