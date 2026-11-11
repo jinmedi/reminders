@@ -280,6 +280,23 @@ function headLabel(s) {
   if (s === addDays(t, 1)) return ['내일', base];
   return [base, ''];
 }
+// Gmail's "Add to Tasks" uses the whole mail subject as the title: drop reply/forward
+// prefixes and leading [tags], then keep the first three words.
+const MAX_WORDS = 3;
+function shortTitle(s) {
+  const orig = String(s || '').replace(/\s+/g, ' ').trim();
+  let t = orig, prev;
+  do {
+    prev = t;
+    t = t.replace(/^(re|fw|fwd|답장|회신|전달)\s*(\[\d+\])?\s*:\s*/i, '')
+         .replace(/^[\[(【<〈「『][^\])】>〉」』]*[\])】>〉」』]\s*/, '');
+  } while (t !== prev);
+  const words = s => s.split(' ').filter(w => /[\p{L}\p{N}]/u.test(w));
+  let ws = words(t);
+  if (!ws.length) ws = words(orig);
+  if (ws.length <= MAX_WORDS && t === orig) return orig;
+  return ws.slice(0, MAX_WORDS).join(' ').replace(/[\s,.:;·\-–—|/]+$/, '') || orig;
+}
 function timeLabel(t) {
   const [h, m] = t.split(':').map(Number);
   return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${pad(m)}`;
@@ -459,7 +476,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.11.08-notoday';
+const APP_VERSION = '2026.11.11-shorttitle';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -1412,6 +1429,15 @@ const GS = (() => {
       store.items()
         .filter(i => i.gid && i.gList === x.id && !i.gDirty && !seen.has(i.gid))
         .forEach(i => g.raw.removeItem(i.id));
+    }
+    // shorten long titles (mail subjects) and keep the full subject at the top of the notes; pushed back to Google
+    for (const it of store.items()) {
+      if (!it.gid || it.gDirty) continue;
+      const st = shortTitle(it.title);
+      if (st === it.title) continue;
+      const notes = (it.notes || '').includes(it.title) ? it.notes : it.title + (it.notes ? '\n' + it.notes : '');
+      g.raw.saveItem(dirty({ ...it, title: st, notes }));
+      g.again = true;
     }
   }
 
