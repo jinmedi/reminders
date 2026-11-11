@@ -476,7 +476,7 @@ function defaultListId() {
 }
 
 /* ---------- view model ---------- */
-const APP_VERSION = '2026.11.11-shorttitle';
+const APP_VERSION = '2026.11.11-nonotes';
 const sortKey = i => (typeof i.order === 'number' ? i.order : (i.createdAt || 0));
 function currentView() {
   const T = today();
@@ -1430,12 +1430,14 @@ const GS = (() => {
         .filter(i => i.gid && i.gList === x.id && !i.gDirty && !seen.has(i.gid))
         .forEach(i => g.raw.removeItem(i.id));
     }
-    // shorten long titles (mail subjects) and keep the full subject at the top of the notes; pushed back to Google
+    // shorten long titles (mail subjects); pushed back to Google
     for (const it of store.items()) {
       if (!it.gid || it.gDirty) continue;
       const st = shortTitle(it.title);
-      if (st === it.title) continue;
-      const notes = (it.notes || '').includes(it.title) ? it.notes : it.title + (it.notes ? '\n' + it.notes : '');
+      // earlier versions put the full subject on the first line of the notes: drop it
+      const [first, ...rest] = (it.notes || '').split('\n');
+      const notes = first && first !== st && shortTitle(first) === st ? rest.join('\n') : (it.notes || '');
+      if (st === it.title && notes === (it.notes || '')) continue;
       g.raw.saveItem(dirty({ ...it, title: st, notes }));
       g.again = true;
     }
